@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { curveHeading, curveX, hillY, LANE_WIDTH, MEDIAN_HALF, ROAD_EDGE, SHOULDER } from "../game/physics.js";
+import { curveHeading, featureAt, groundY, hillY, lateralX, LANE_WIDTH, MEDIAN_HALF, ROAD_EDGE, SHOULDER } from "../game/physics.js";
 import { rng } from "../game/rng.js";
 import * as M from "./models.js";
 
@@ -21,7 +21,9 @@ export const BIOMES = {
  * right-hand traffic shows correctly (median and fast lane on the driver's left).
  */
 export function toWorld(z, x, y = 0, biome = "south", out = new THREE.Vector3()) {
-  return out.set(curveX(z) - x, hillY(z) + y, z);
+  // On the carriageway you are on the deck (flyovers, bridges); beyond it, on the land.
+  const onDeck = Math.abs(x) <= ROAD_HALF_TOTAL + 0.5;
+  return out.set(lateralX(z, x), (onDeck ? hillY(z) : groundY(z)) + y, z);
 }
 
 function roadTexture() {
@@ -155,20 +157,17 @@ export class World {
     const step = this.quality === "low" ? 6 : 4;
     const rows = CHUNK / step + 1;
 
-    // road strip following curve and hills
-    {
-      const cols = 2;
+    // two carriageway strips following curves, hills and flyovers; at a roundabout they part
+    // around the island (x = ±0 keeps each strip's inner edge on its own side of the median)
+    for (const [xa, xb, ua, ub] of [[-ROAD_HALF_TOTAL, -1e-6, 0, 0.5], [1e-6, ROAD_HALF_TOTAL, 0.5, 1]]) {
       const pos = [], uv = [], idx = [];
       for (let r = 0; r < rows; r++) {
         const z = z0 + r * step;
-        for (let c = 0; c <= cols; c++) {
-          const x = -ROAD_HALF_TOTAL + (c / cols) * ROAD_HALF_TOTAL * 2;
-          pos.push(curveX(z) - x, hillY(z) + 0.02, z);
-          uv.push(c / cols, z / 12);
-        }
+        pos.push(lateralX(z, xa), hillY(z) + 0.02, z, lateralX(z, xb), hillY(z) + 0.02, z);
+        uv.push(ua, z / 12, ub, z / 12);
       }
-      for (let r = 0; r < rows - 1; r++) for (let c = 0; c < cols; c++) {
-        const a = r * (cols + 1) + c, b = a + cols + 1;
+      for (let r = 0; r < rows - 1; r++) {
+        const a = r * 2, b = a + 2;
         idx.push(a, a + 1, b, b, a + 1, b + 1);
       }
       const geo = new THREE.BufferGeometry();
@@ -191,10 +190,10 @@ export class World {
         const z = z0 + row * step;
         for (const x of xs) {
           const ax = Math.abs(x);
-          let y = hillY(z);
+          let y = groundY(z);
           if (ax > ROAD_HALF_TOTAL + 0.1 && ax < 13.5) y -= 0.6; // drainage ditch
           if (ax > 25) y += (Math.sin(z / 47 + x / 31) + Math.sin(x / 13 + z / 91)) * (biome === "plateau" ? 3 + ax / 25 : 1.2 + ax / 90);
-          pos.push(curveX(z) - x, y - 0.05, z);
+          pos.push(lateralX(z, x), y - 0.05, z);
           c.set(ax < 14 ? B.dirt : B.ground[Math.floor(r.next() * 3)]);
           col.push(c.r, c.g, c.b);
         }
@@ -225,8 +224,11 @@ export class World {
     const r = rng(index * 977 + 13);
     const density = this.quality === "low" ? 0.5 : this.quality === "high" ? 1.3 : 0.9;
     const put = (mesh, z, x, rotY = 0) => {
+      // nothing grows in the river under a bridge or crowds a flyover ramp or roundabout
+      const f = featureAt(z, 25);
+      if (f && (f.type === "bridge" || (f.type !== "overpass" && Math.abs(x) < 40))) return;
       toWorld(z, x, 0, biome, mesh.position);
-      mesh.rotation.y = rotY + curveHeading(z);
+      mesh.rotation.y = rotY + curveHeading(z, x);
       group.add(mesh);
     };
     const side = () => (r.chance(0.5) ? -1 : 1);

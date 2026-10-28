@@ -119,7 +119,7 @@ export class Traffic {
         c.x = -(MEDIAN_HALF + LANE_WIDTH * (c.lane + 0.5));
       }
       toWorld(c.z, c.x, 0, biome, c.mesh.position);
-      c.mesh.rotation.y = curveHeading(c.z) + (c.dir < 0 ? Math.PI : 0) + (c.dir > 0 ? (laneX(c.lane) - c.x) * -0.04 : 0);
+      c.mesh.rotation.y = curveHeading(c.z, c.x) + (c.dir < 0 ? Math.PI : 0) + (c.dir > 0 ? (laneX(c.lane) - c.x) * -0.04 : 0);
     }
     // recycle far-away cars
     this.cars = this.cars.filter((c) => {

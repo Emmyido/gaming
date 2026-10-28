@@ -5,11 +5,12 @@ import { openGreenRev, track } from "./config.js";
 import { Audio } from "./game/audio.js";
 import { Input } from "./game/input.js";
 import { planLeg } from "./game/director.js";
-import { BIOME_HILLS, crashDamage, curveHeading, laneX, MEDIAN_HALF, overlaps, ROAD_EDGE, setHillProfile, SHOULDER } from "./game/physics.js";
+import { BIOME_HILLS, crashDamage, curveHeading, hillY, laneX, lateralX, MEDIAN_HALF, overlaps, ROAD_EDGE, setHillProfile, setRoadFeatures, SHOULDER } from "./game/physics.js";
 import { rng } from "./game/rng.js";
 import * as S from "./game/state.js";
 import * as UI from "./game/ui.js";
 import { Actors, SNACKS } from "./world/actors.js";
+import { animateFeatures, buildFeature } from "./world/features.js";
 import * as M from "./world/models.js";
 import { Traffic } from "./world/traffic.js";
 import { BIOMES, toWorld, World } from "./world/world.js";
@@ -174,6 +175,10 @@ class Game {
     this.traffic.clear();
     this.actors.clear();
     this.potholeMeshes = new Map();
+    this.roadFeatures = [];
+    this.legFeatures = [];
+    this.featureFx = [];
+    setRoadFeatures([]);
   }
 
   setupLegEnvironment() {
@@ -183,6 +188,13 @@ class Game {
     const starts = [this.legStartZ];
     this.plan = planLeg(this.leg, `${route.id}-${this.legIndex}-${S.dayKey()}`);
     const endZ = this.legStartZ + this.plan.length;
+    // bridges, flyovers and roundabouts in route z; keep the previous leg's so the road behind stays intact
+    const routed = this.plan.features.map((f) => ({ ...f, from: f.from + this.legStartZ, to: f.to + this.legStartZ }));
+    for (const e of this.plan.events) if (e.type === "feature") e.feature = routed[this.plan.features.indexOf(e.feature)];
+    this.roadFeatures = [...(this.roadFeatures ?? []).filter((f) => f.to > this.legStartZ - 400), ...routed];
+    this.legFeatures = routed;
+    this.featureIdx = 0;
+    setRoadFeatures(this.roadFeatures);
     const nextLeg = legs[this.legIndex + 1];
     this.legEndZ = endZ;
     this.world.setBiomeResolver((z) => (z < endZ || !nextLeg ? this.leg.biome : nextLeg.biome));
@@ -232,6 +244,9 @@ class Game {
     const biome = this.world.biomeAt(this.player.z);
     const light = this.world.applyAtmosphere(biome, this.timeOfDay ?? 8, this.camera);
     this.playerMesh.userData.head.intensity = light < 0.35 ? 60 : 0;
+    this.spawnFeaturesAhead();
+    for (const fx of this.featureFx ?? []) animateFeatures(fx, dt, this.t);
+    this.cullBehind();
     this.world.update(this.player.z, dt, this.camera);
     this.renderer.render(this.scene, this.camera);
     this.renderBubbles();
@@ -335,7 +350,7 @@ class Game {
     const p = this.player;
     const m = this.playerMesh;
     toWorld(p.z, p.x, 0, this.leg.biome, m.position);
-    m.rotation.y = curveHeading(p.z) - p.steerVis * 0.12;
+    m.rotation.y = curveHeading(p.z, p.x) - p.steerVis * 0.12;
     const shell = m.userData.shell;
     shell.rotation.z = p.steerVis * 0.03 * Math.min(1, p.speed / 20);
     shell.rotation.x = THREE.MathUtils.lerp(shell.rotation.x, this.input.brake ? 0.025 : this.input.gas ? -0.012 : 0, 6 * dt);
@@ -360,8 +375,10 @@ class Game {
       cinematic: { back: 10, up: 3, side: 6 + Math.sin(this.t * 0.2) * 3, look: 6, lookUp: 1 },
     };
     const o = this.attract ? { back: 11, up: 4 + Math.sin(this.t * 0.25) * 1.5, side: Math.sin(this.t * 0.15) * 5, look: 18, lookUp: 1 } : offsets[this.cameraMode];
-    const target = toWorld(p.z - o.back, p.x + o.side, o.up, this.leg.biome);
-    const look = toWorld(p.z + o.look, p.x * 0.7, o.lookUp, this.leg.biome);
+    // the camera rides at deck height, so it stays above the river on bridges and on flyovers
+    const deck = (z, x, y) => new THREE.Vector3(lateralX(z, x), hillY(z) + y, z);
+    const target = deck(p.z - o.back, p.x + o.side, o.up);
+    const look = deck(p.z + o.look, p.x * 0.7, o.lookUp);
     const k = this.cameraMode === "cockpit" && !this.attract ? 1 : 1 - Math.exp(-6 * dt);
     this.camera.position.lerp(target, k);
     if (this.shake > 0.01) {
@@ -392,7 +409,7 @@ class Game {
       h.wx = Math.min(ROAD_EDGE - 0.5, Math.max(MEDIAN_HALF + 0.6, x));
       h.wz = base + h.z;
       toWorld(h.wz, h.wx, 0, this.leg.biome, mesh.position);
-      mesh.rotation.y = curveHeading(h.wz);
+      mesh.rotation.y = curveHeading(h.wz, h.wx);
       if (this.world.raining) mesh.scale.set(1.15, 1, 1.15);
       this.scene.add(mesh);
       this.potholeMeshes.set(h, mesh);
@@ -524,6 +541,7 @@ class Game {
       const gate = M.cityGate(city.name, city.state, 17);
       toWorld(this.legEndZ, 0.8, 0, this.leg.biome, gate.position);
       gate.rotation.y = curveHeading(this.legEndZ);
+      gate.userData.z = this.legEndZ;
       this.world.dynamic.add(gate);
     }
     let action = null;
@@ -580,6 +598,9 @@ class Game {
           }
           if (Math.abs(d) < 25 && p.speed < 4 && this.state.fuel < 97) action = { text: `Refuel · ${naira(S.servicePrices(this.state).refuel)}  (F)`, run: () => this.roadsideRefuel() };
           break;
+        case "feature":
+          this.updateFeatureEvent(e);
+          break;
         case "breakdown-scene":
           if (!e.state.told && d < 60) {
             e.state.told = true;
@@ -590,18 +611,87 @@ class Game {
           break;
       }
     }
-    this.active = this.active.filter((e) => e.wz > p.z - 200 || (e.type === "goslow" && e.wz + e.length > p.z - 50));
+    this.active = this.active.filter((e) => e.wz > p.z - 200 || (e.type === "goslow" && e.wz + e.length > p.z - 50) || (e.type === "feature" && e.feature.to > p.z - 50));
     if (action) {
       UI.actionButton(action.text, action.run);
       if (this.input.took("KeyB", "KeyF")) action.run();
     } else UI.actionButton(null);
   }
 
+  /** Build bridge/flyover/roundabout set pieces before they come into view. */
+  spawnFeaturesAhead() {
+    const list = this.legFeatures ?? [];
+    while (this.featureIdx < list.length && list[this.featureIdx].from < this.player.z + 900) {
+      const f = list[this.featureIdx++];
+      const fx = buildFeature(this.world.dynamic, f, this.leg.biome);
+      fx.to = f.to;
+      (this.featureFx ??= []).push(fx);
+      if (f.type === "roundabout") this.traffic.slowZones.push({ from: f.from - 50, to: f.to + 10, speed: 10 });
+      if (f.type === "bridge" && f.style === "beam") this.traffic.slowZones.push({ from: f.from, to: f.to, speed: 20 });
+    }
+  }
+
+  /** Drop props and set pieces well behind the player. */
+  cullBehind() {
+    const limit = this.player.z - 300;
+    const kids = this.world.dynamic.children;
+    for (let i = kids.length - 1; i >= 0; i--) if (kids[i].userData.z !== undefined && kids[i].userData.z < limit) this.world.dynamic.remove(kids[i]);
+    if (this.featureFx?.length) this.featureFx = this.featureFx.filter((fx) => fx.to > limit);
+  }
+
+  /** What happens as you drive through a feature. */
+  updateFeatureEvent(e) {
+    const p = this.player;
+    const f = e.feature;
+    const st = e.state;
+    if (!f) return;
+    if (f.type === "bridge" && !st.on && p.z > f.from) {
+      st.on = true;
+      if (f.style === "beam") UI.toast(`🌉 ${f.name}. Narrow bridge, no overtaking.`);
+      else {
+        UI.alertBanner(`🌊 ${f.name} · River Niger`, "info");
+        UI.toast(f.style === "cable" ? "The Second Niger Bridge: 1.6 km linking Asaba and Onitsha." : "Jebba Bridge: road and rail cross the Niger side by side.", { kind: "gold" });
+        this.state.xp += 25;
+      }
+    }
+    if (f.type === "flyover" && !st.on && p.z > f.from + 60) {
+      st.on = true;
+      UI.toast(`🛣 Up the ${f.name.toLowerCase()}. The junction traffic is below you.`);
+    }
+    if (f.type === "roundabout") {
+      const mid = (f.from + f.to) / 2;
+      if (!st.warned && p.z > f.from - 220) {
+        st.warned = true;
+        UI.alertBanner(`🔄 ${f.name} ahead. Slow down`, "info");
+      }
+      if (!st.done && p.z > mid) {
+        st.done = true;
+        const kmh = p.speed * KMH;
+        if (kmh > 60) {
+          const fine = 5_000;
+          S.spend(this.state, Math.min(this.state.coins, fine));
+          this.audio.whistle();
+          const who = this.route.id.startsWith("lagos") && this.legIndex === 0 ? "LASTMA officer" : "traffic warden";
+          this.dialog({
+            art: "🔄",
+            title: `${f.name}: too fast!`,
+            body: `<p class="quote">The ${who} blows the whistle: "Oga! You wan fly the roundabout? Park there!"</p><p>You took the roundabout at ${Math.round(kmh)} km/h. Fine: <b>${naira(fine)}</b>. Under 60 km/h next time.</p>`,
+            actions: [{ id: "ok", label: "Sorry, I'll slow down", style: "primary" }],
+          });
+        } else {
+          this.state.xp += 10;
+          UI.toast("Smooth roundabout. The warden nods at you. 👍");
+        }
+      }
+    }
+  }
+
   spawnEvent(e) {
     const biome = this.leg.biome;
     const put = (mesh, z, x, rot = 0) => {
       toWorld(z, x, 0, biome, mesh.position);
-      mesh.rotation.y = curveHeading(z) + rot;
+      mesh.rotation.y = curveHeading(z, x) + rot;
+      mesh.userData.z = z;
       this.world.dynamic.add(mesh);
       return mesh;
     };

@@ -42,6 +42,10 @@ Adding a city is one entry in `src/data/routes.js`.
   - **Lagos:** yellow **danfos** that cut in, **kekes**, **okadas** with a passenger
   - **Highways:** intercity luxury buses, trailers and tankers in the slow lane
   - **Lane discipline:** right-hand traffic on a dual carriageway, with a fast lane by the median; honk and slow cars move over
+- **Bridges, flyovers and roundabouts:**
+  - **Named Niger crossings:** the steel-truss **Jebba Bridge** and the cable-stayed **Second Niger Bridge**, with the river below, piers, and fishermen in canoes. The South also gets smaller creek bridges (narrow, no overtaking).
+  - **City flyovers:** the road climbs over a busy junction, with traffic crossing underneath and traders under the deck. Highway **overpasses** cross above you, with their own traffic.
+  - **Roundabouts:** the carriageway swings around an island with palms and a monument in green-white-green, a traffic warden directing traffic, and cars queueing on the side roads. Above 60 km/h the warden (LASTMA in Lagos) fines you.
 - **Potholes:** shallow ones jolt you, deep ones can burst a tyre. Tougher cars and suspension upgrades take less damage, and rain makes them harder to see.
 - **Go-slow:** a city jam at the start and end of busy legs, plus random mid-route jams (a broken-down trailer, market day, road works). **Hawkers** walk between the cars; buy a snack to restore your energy.
 - **Checkpoints:** slow down when you see the drums, stop, and answer the officer:
@@ -89,6 +93,7 @@ npm test               # unit tests: streaks, missions, economy, event director,
 npm run build          # static site in dist/
 npm run smoke          # headless browser: boots the game, drives, checks the go-slow, hawker and checkpoint flows; fails on console errors
 node scripts/tour.mjs  # screenshots of every region into screenshots/
+node scripts/features-tour.mjs  # screenshots of each bridge, flyover, overpass and roundabout type
 ```
 
 Controls: **↑/W** gas · **↓/S/Space** brake · **←→/A D** steer · **H** horn · **C** camera · **B** buy from a hawker · **F** refuel · **P/Esc** pause. On phones, on-screen buttons appear.
@@ -147,11 +152,12 @@ src/
   data/cars.js       garage cars, upgrades, safety kit, driving physics
   game/state.js      save game, streaks, daily missions, economy, achievements (pure, tested)
   game/director.js   seeded per-leg event plan: potholes, checkpoints, go-slows, animals, billboards (pure, tested)
-  game/physics.js    lanes, curves, hills, collisions
+  game/physics.js    lanes, curves, hills, road features (flyover lift, river valleys, roundabout widening), collisions
   game/ui.js         menu, modals, garage, passport, HUD helpers
   world/world.js     streamed road and terrain chunks, biome scenery, sky, day/night, rain
   world/traffic.js   NPC vehicles: regional mix, car-following, lane changes, jams
   world/actors.js    people and animals: walkers, hawkers, officers, herds
+  world/features.js  bridges, flyovers, overpasses and roundabouts as 3D set pieces, with cross traffic
   world/models.js    procedural low-poly 3D models (merged geometry: one draw call per object)
 ```
 

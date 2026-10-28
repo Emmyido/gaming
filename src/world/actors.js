@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { curveHeading, laneX } from "../game/physics.js";
+import { curveHeading, featureAt, laneX, ROAD_EDGE, SHOULDER } from "../game/physics.js";
 import { rng } from "../game/rng.js";
 import { toWorld } from "./world.js";
 import { animatePerson, cow, goat, person } from "./models.js";
@@ -53,6 +53,7 @@ export class Actors {
     for (let i = walkers.length; i < target; i++) {
       const side = this.r.chance(0.75) ? 1 : -1;
       const z = playerZ + this.r.range(30, 380);
+      if (featureAt(z, 30)) continue; // no footpath on bridges, flyovers or roundabouts
       const dir = this.r.chance(0.5) ? 1 : -1;
       const kind = this.r.chance(0.12) ? "hawker" : "civilian";
       this.add(kind, z, side * this.r.range(10.6, 13.5), { vz: dir * this.r.range(0.9, 1.5), face: dir > 0 ? 0 : Math.PI, role: "walker" });
@@ -116,8 +117,13 @@ export class Actors {
       }
       a.z += a.vz * dt;
       a.x += a.vx * dt;
+      // walkers reaching a bridge or flyover step up onto its shoulder instead of walking on air
+      if (a.role === "walker" && Math.abs(a.x) > ROAD_EDGE + SHOULDER) {
+        const f = featureAt(a.z, 5);
+        if (f && (f.type === "bridge" || f.type === "flyover")) a.x = Math.sign(a.x) * (ROAD_EDGE + SHOULDER - 0.6);
+      }
       toWorld(a.z, a.x, 0, biome, a.mesh.position);
-      a.mesh.rotation.y = curveHeading(a.z) + a.face;
+      a.mesh.rotation.y = curveHeading(a.z, a.x) + a.face;
       if (a.mesh.userData.legs) animatePerson(a.mesh, t, Math.hypot(a.vz, a.vx));
       else if (a.vx || a.vz) a.mesh.position.y += Math.abs(Math.sin(t * 6 + a.z)) * 0.05; // animals bob
     }

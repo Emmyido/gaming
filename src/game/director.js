@@ -32,14 +32,17 @@ export function planLeg(leg, seed) {
     events.push({ type: "goslow", z, length: r.range(380, 500) });
     busy.push([z, z + 520]);
   }
-  // A mid-route jam on busy roads (accident, broken-down trailer, market day)
-  if (r.chance(leg.traffic * 0.8)) {
-    const z = place(length * 0.3, length * 0.7);
-    if (z !== null) {
-      const cause = r.pick(["broken-down trailer", "market day", "fallen tanker cleared by FRSC", "road works"]);
-      events.push({ type: "goslow", z, length: r.range(250, 380), cause });
-      busy.push([z, z + 400]);
-    }
+  // Bridges, flyovers, roundabouts and overpasses. Kept >= 1 km into the leg so they are planned
+  // before the road there is built, and clear of each other and of stopping events.
+  const features = [];
+  const addFeature = (f, padBusy = 60) => {
+    features.push(f);
+    busy.push([f.from - padBusy, f.to + padBusy]);
+    events.push({ type: "feature", z: f.from, feature: f });
+  };
+  if (leg.bridge) {
+    const z = place(Math.max(1000, length * 0.42), Math.max(1100, length * 0.6));
+    if (z !== null) addFeature({ type: "bridge", from: z, to: z + 300, depth: 15, name: leg.bridge, style: leg.bridge.includes("Second Niger") ? "cable" : "truss" });
   }
 
   // Checkpoints by type, from the leg's security profile
@@ -50,6 +53,21 @@ export function planLeg(leg, seed) {
     if (z === null) continue;
     events.push({ type: "checkpoint", kind, z });
     busy.push([z - 120, z + 60]);
+  }
+
+  if ((leg.goSlowAtEnd || leg.goSlowAtStart || leg.traffic > 0.65) && r.chance(0.9)) {
+    const z = place(1000, length - 500);
+    if (z !== null) addFeature({ type: "flyover", from: z, to: z + 360, name: r.pick(["Junction flyover", "Interchange flyover", "Market flyover"]) });
+  }
+
+  // A mid-route jam on busy roads (accident, broken-down trailer, market day)
+  if (r.chance(leg.traffic * 0.8)) {
+    const z = place(length * 0.3, length * 0.7);
+    if (z !== null) {
+      const cause = r.pick(["broken-down trailer", "market day", "fallen tanker cleared by FRSC", "road works"]);
+      events.push({ type: "goslow", z, length: r.range(250, 380), cause });
+      busy.push([z, z + 400]);
+    }
   }
 
   // FRSC speed trap (radar) on good roads
@@ -66,6 +84,25 @@ export function planLeg(leg, seed) {
     events.push({ type: "animals", kind: leg.biome === "south" ? "goats" : r.pick(["cattle", "goats", "cattle"]), z });
     busy.push([z - 60, z + 60]);
   }
+
+  // Other road features take the space left after checkpoints and animal crossings
+  const creekChance = { south: 0.7, savanna: 0.5, plateau: 0.45, sahel: 0.25 }[leg.biome] ?? 0.4;
+  if (r.chance(creekChance)) {
+    const z = place(1000, length - 400);
+    if (z !== null) {
+      const len = Math.round(r.range(70, 110));
+      addFeature({ type: "bridge", from: z, to: z + len, depth: 6, name: r.pick(["River crossing", "Creek bridge", "Stream crossing"]), style: "beam" });
+    }
+  }
+  if (r.chance(0.75)) {
+    const z = place(1000, length - 250);
+    if (z !== null) addFeature({ type: "roundabout", from: z, to: z + 56, radius: 14, name: r.pick(["Unity Roundabout", "Independence Roundabout", "Eagle Square Roundabout", "Gate Roundabout", "Clock Tower Roundabout"]) });
+  }
+  if (r.chance(0.5)) {
+    const z = place(1000, length - 200);
+    if (z !== null) addFeature({ type: "overpass", from: z - 6, to: z + 6 }, 30);
+  }
+  features.sort((a, b) => a.from - b.from);
 
   // Filling station roughly mid-leg
   const fz = place(length * 0.4, length * 0.6);
@@ -93,5 +130,5 @@ export function planLeg(leg, seed) {
   }
 
   events.sort((a, b) => a.z - b.z);
-  return { length, events, potholes };
+  return { length, events, potholes, features };
 }

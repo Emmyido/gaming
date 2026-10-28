@@ -572,16 +572,23 @@ export function textSign(text, { bg = "#0b6e4f", fg = "#fff", w = 6, h = 1.6, su
     ctx.strokeRect(8, 8, cw - 16, ch - 16);
     ctx.fillStyle = fg;
     ctx.textAlign = "center";
-    ctx.font = `bold ${Math.round(ch * (sub ? 0.36 : 0.5))}px system-ui, sans-serif`;
+    // shrink long names (e.g. SECOND NIGER BRIDGE) until they fit inside the border
+    const fit = (str, size, weight) => {
+      let px = size;
+      do ctx.font = `${weight} ${px}px system-ui, sans-serif`;
+      while (ctx.measureText(str).width > cw - 40 && --px > 8);
+    };
+    fit(text, Math.round(ch * (sub ? 0.36 : 0.5)), "bold");
     ctx.fillText(text, cw / 2, sub ? ch * 0.48 : ch * 0.66);
     if (sub) {
-      ctx.font = `${Math.round(ch * 0.22)}px system-ui, sans-serif`;
+      fit(sub, Math.round(ch * 0.22), "normal");
       ctx.fillText(sub, cw / 2, ch * 0.8);
     }
   });
   const g = new THREE.Group();
   const panel = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ map: tex, side: THREE.DoubleSide }));
   panel.position.y = 3 + h / 2;
+  panel.rotation.y = Math.PI; // face drivers coming towards it (from -z)
   g.add(panel);
   g.add(staticMesh("sign-posts", () => [part(box(0.15, 3.2, 0.15), "#777", { x: -1.6, y: 1.6 }), part(box(0.15, 3.2, 0.15), "#777", { x: 1.6, y: 1.6 })]));
   return g;
@@ -608,7 +615,8 @@ export function cityGate(cityName, state, span) {
     ctx.fillText(`${state} State · Drive safely · GreenRev`, w / 2, 112);
   });
   const panel = new THREE.Mesh(new THREE.PlaneGeometry(span + 1.6, 2), new THREE.MeshBasicMaterial({ map: tex, side: THREE.DoubleSide }));
-  panel.position.set(0, 8.6, 0.62);
+  panel.position.set(0, 8.6, -0.62);
+  panel.rotation.y = Math.PI; // readable by drivers approaching the gate
   g.add(panel);
   return g;
 }
@@ -621,4 +629,140 @@ function roundRect(ctx, x, y, w, h, r) {
   ctx.arcTo(x, y + h, x, y, r);
   ctx.arcTo(x, y, x + w, y, r);
   ctx.closePath();
+}
+
+// ---------------------------------------------------------------- bridges, flyovers, roundabouts
+
+/** One 8 m piece of concrete parapet (laid end to end along a bridge or flyover edge). */
+export function parapet() {
+  return staticMesh("parapet", () => [
+    part(box(0.35, 0.9, 8.05), "#d6d2c8", { y: 0.45 }),
+    part(box(0.4, 0.12, 8.05), "#f1ede4", { y: 0.95 }),
+  ]);
+}
+
+/** Concrete pier with a crosshead, from the deck down to `h` metres below. */
+export function pier(h, width = 9) {
+  const hh = Math.round(h);
+  return staticMesh(`pier-${hh}-${width}`, () => [
+    part(box(width, 0.9, 1.6), "#bdb7ab", { y: -0.6 }),
+    part(cyl(0.7, 0.85, hh, 10), "#c9c3b6", { x: -width / 3, y: -hh / 2 - 1 }),
+    part(cyl(0.7, 0.85, hh, 10), "#c9c3b6", { x: width / 3, y: -hh / 2 - 1 }),
+  ]);
+}
+
+/** Underside slab so bridges and flyovers read as solid decks from the side. */
+export function deckSlab(width) {
+  return staticMesh(`slab-${width}`, () => [part(box(width, 1.1, 8.1), "#a9a397", { y: -0.6 }), part(box(width + 0.3, 0.25, 8.1), "#8f897d", { y: -0.05 })]);
+}
+
+/** Steel truss panel (Jebba style), one per 8 m along each side of the deck. */
+export function trussPanel() {
+  return staticMesh("truss", () => {
+    const c = "#5b7f95";
+    return [
+      part(box(0.3, 0.3, 8.05), c, { y: 6 }),
+      part(box(0.3, 0.3, 8.05), c, { y: 0.4 }),
+      part(box(0.28, 0.28, 6.0), c, { y: 3.2, rx: 0.82 }),
+      part(box(0.28, 0.28, 6.0), c, { y: 3.2, rx: -0.82 }),
+      part(box(0.3, 5.8, 0.3), c, { y: 3.2, z: 4 }),
+    ];
+  });
+}
+
+/** Cable-stayed pylon (Second Niger Bridge style) standing in the median, with stay cables. */
+export function pylon(span = 70) {
+  return staticMesh(`pylon-${span}`, () => {
+    const p = [
+      part(box(1.6, 38, 1.6), "#e7e2d6", { y: 19 }),
+      part(box(2.2, 1.2, 2.2), "#cfc9bc", { y: 38.2 }),
+    ];
+    for (let i = 1; i <= 6; i++) {
+      for (const dir of [-1, 1]) {
+        const dz = (dir * span * i) / 12;
+        const top = 36 - i * 1.5;
+        const len = Math.hypot(dz, top - 1);
+        const ang = Math.atan2(-dz, top - 1);
+        for (const sx of [-1, 1]) p.push(part(box(0.08, len, 0.08), "#f8f8f8", { x: sx * 0.6, y: (top + 1) / 2, z: dz / 2, rx: ang }));
+      }
+    }
+    return p;
+  });
+}
+
+const WATER = new THREE.MeshLambertMaterial({ color: "#2f6f7e", transparent: true, opacity: 0.92 });
+
+/** River surface for a bridge crossing; scaled per bridge. */
+export function riverWater(length, width = 420) {
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(width, length, 1, 1), WATER);
+  m.rotation.x = -Math.PI / 2;
+  return m;
+}
+
+export function canoe() {
+  return staticMesh("canoe", () => [
+    part(box(0.9, 0.35, 6), "#6b4226", { y: 0.15 }),
+    part(box(0.7, 0.1, 5.6), "#3b2414", { y: 0.33 }),
+    part(box(0.4, 0.6, 0.3), "#1d3557", { y: 0.75, z: 1 }),
+    part(sph(0.16), "#4a2c1d", { y: 1.2, z: 1 }),
+    part(cone(0.32, 0.25, 8), "#e9c46a", { y: 1.38, z: 1 }), // straw hat
+    part(box(0.05, 0.05, 3.2), "#8d6e63", { x: 0.4, y: 0.9, z: 1.4, rx: 0.5 }), // paddle
+  ]);
+}
+
+/** A road crossing above ours: deck, piers on both shoulders and the median, Nigerian green fascia. */
+export function overpass(span) {
+  return staticMesh(`overpass-${span}`, () => {
+    const p = [
+      part(box(span, 1.3, 11), "#b5afa3", { y: 7.6 }),
+      part(box(span, 0.9, 0.4), "#1faa59", { y: 7.4, z: -5.6 }),
+      part(box(span, 0.9, 0.4), "#1faa59", { y: 7.4, z: 5.6 }),
+      part(box(span, 1.0, 0.3), "#d6d2c8", { y: 8.7, z: -5.3 }),
+      part(box(span, 1.0, 0.3), "#d6d2c8", { y: 8.7, z: 5.3 }),
+    ];
+    for (const x of [-span / 2 + 2, 0, span / 2 - 2]) p.push(part(box(1.6, 7.2, 6), "#c9c3b6", { x, y: 3.6 }));
+    return p;
+  });
+}
+
+/** A side road strip (runs along local x), used under flyovers and at roundabout arms. */
+export function sideRoad(length, width = 8) {
+  return staticMesh(`sideroad-${length}-${width}`, () => [
+    part(box(length, 0.06, width), "#4f4b47", {}),
+    part(box(length, 0.07, 0.2), "#e9e5da", { z: 0 }),
+  ]);
+}
+
+/**
+ * Roundabout island shaped to the road's swing (lens of half-width w(z) along z), with kerb,
+ * grass, flowers, palms and a monument in the national colours.
+ */
+export function roundaboutIsland(points, monumentScale = 1) {
+  const g = new THREE.Group();
+  const shape = new THREE.Shape(points.map(([x, z]) => new THREE.Vector2(x, z)));
+  const grass = new THREE.Mesh(new THREE.ShapeGeometry(shape, 2), new THREE.MeshLambertMaterial({ color: "#4f9a43", side: THREE.DoubleSide }));
+  grass.rotation.x = Math.PI / 2;
+  grass.position.y = 0.16;
+  g.add(grass);
+  const kerbPts = points.map(([x, z]) => new THREE.Vector3(x, 0.12, z));
+  const kerb = new THREE.Mesh(
+    new THREE.TubeGeometry(new THREE.CatmullRomCurve3(kerbPts, true), points.length * 2, 0.3, 4, true),
+    new THREE.MeshLambertMaterial({ color: "#f1ede4" }),
+  );
+  g.add(kerb);
+  const s = monumentScale;
+  g.add(staticMesh(`monument-${s}`, () => [
+    part(cyl(4.2 * s, 4.6 * s, 0.8, 16), "#d9d4c7", { y: 0.5 }),
+    part(cyl(3.0 * s, 3.2 * s, 0.6, 16), "#e63946", { y: 1.1 }), // flower bed
+    part(box(1.4 * s, 9 * s, 1.4 * s), "#f1faee", { y: 5.4 * s }),
+    part(box(1.45 * s, 3 * s, 0.5 * s), "#008751", { y: 7.6 * s, x: -0.48 * s, z: 0.5 * s }),
+    part(box(0.5 * s, 3 * s, 0.5 * s), "#ffffff", { y: 7.6 * s, z: 0.5 * s }),
+    part(box(1.45 * s, 3 * s, 0.5 * s), "#008751", { y: 7.6 * s, x: 0.48 * s, z: 0.5 * s }),
+    part(cone(1.1 * s, 2 * s, 4), "#e9c46a", { y: 10.9 * s, ry: Math.PI / 4 }),
+  ]));
+  return g;
+}
+
+export function arrowSign(text) {
+  return textSign(text, { bg: "#0b6e4f", w: 5, h: 1.4, sub: "Give way to traffic on the roundabout" });
 }
