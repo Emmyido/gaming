@@ -1,8 +1,8 @@
 {
-  "name": "greenrev-roadtrip-3d",
+  "name": "greenrev-roadtrip",
   "version": "2.0.0",
   "private": true,
-  "description": "GreenRev Roadtrip 3D: drive Nigeria's highways city to city. A retention game for the GreenRev web and mobile apps.",
+  "description": "GreenRev Roadtrip: drive Nigeria's highways city to city. A retention game for the GreenRev web and mobile apps.",
   "type": "module",
   "scripts": {
     "dev": "vite",

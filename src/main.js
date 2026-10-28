@@ -1202,7 +1202,7 @@ class Game {
     });
     const id = await p;
     if (id === "share") {
-      const text = `I just drove ${r.name} on GreenRev Roadtrip 3D in ${UI.fmtTime(total)}! 🚗🇳🇬 Potholes, checkpoints, go-slow and all.`;
+      const text = `I just drove ${r.name} on GreenRev Roadtrip in ${UI.fmtTime(total)}! 🚗🇳🇬 Potholes, checkpoints, go-slow and all.`;
       try {
         if (navigator.share) await navigator.share({ text, url: location.href });
         else await navigator.clipboard.writeText(`${text} ${location.href}`);

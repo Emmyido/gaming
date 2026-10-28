@@ -1,4 +1,4 @@
-# GreenRev Roadtrip 3D
+# GreenRev Roadtrip
 
 A 3D road-trip game across Nigeria, built to bring people back to the GreenRev web and mobile apps every day. You drive city to city by road:
 - dodging potholes
