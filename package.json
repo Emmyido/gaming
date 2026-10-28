@@ -1,0 +1,23 @@
+{
+  "name": "greenrev-roadtrip-3d",
+  "version": "2.0.0",
+  "private": true,
+  "description": "GreenRev Roadtrip 3D: drive Nigeria's highways city to city. A retention game for the GreenRev web and mobile apps.",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "build:single": "vite build --mode single",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "smoke": "node scripts/smoke.mjs"
+  },
+  "dependencies": {
+    "three": "^0.186.1"
+  },
+  "devDependencies": {
+    "vite": "^8.3.5",
+    "vite-plugin-singlefile": "^2.3.4",
+    "vitest": "^5.0.5"
+  }
+}
