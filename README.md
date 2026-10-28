@@ -218,6 +218,10 @@ src/
 
 Everything is procedural, so there are no image or model files. The full build is about 170 KB gzipped, three.js included.
 
+## Roadmap
+
+Planned for later releases: travel-together invite links (same car or convoy), in-trip voice chat and car radio, and a luxury and enthusiast car tier with customisation. See [docs/ROADMAP.md](docs/ROADMAP.md).
+
 ## Notes
 
 - This is a full rebuild. The previous version's code (`game.js`, `world3d.js`, `server.js` …) was never committed to this repository, only its README, so its features were reimplemented from that description.
