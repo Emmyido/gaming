@@ -550,6 +550,11 @@ export function billboard(ad) {
     ctx.font = "bold 26px system-ui, sans-serif";
     ctx.fillText("greenrevs.com", 330, 248);
   });
+  return boardWith(tex, { ad });
+}
+
+/** Billboard frame on two posts with a 2:1 picture panel (8 m × 4 m). */
+function boardWith(tex, userData) {
   const g = new THREE.Group();
   g.add(staticMesh("board-frame", () => [
     part(box(0.25, 6, 0.25), "#555", { x: -3.2, y: 3 }),
@@ -559,8 +564,103 @@ export function billboard(ad) {
   const panel = new THREE.Mesh(new THREE.PlaneGeometry(8, 4), new THREE.MeshBasicMaterial({ map: tex }));
   panel.position.set(0, 6.6, 0.01);
   g.add(panel);
-  g.userData.ad = ad;
+  Object.assign(g.userData, userData);
+  g.userData.panel = panel;
   return g;
+}
+
+/** Billboard rotation that faces drivers coming from behind, angled towards the road. */
+export const boardFacing = (side) => (side > 0 ? Math.PI - 0.6 : -(Math.PI - 0.6));
+
+const shortNaira = (n) => (n >= 1_000_000 ? `₦${n / 1_000_000}m` : n >= 1000 ? `₦${Math.round(n / 1000)}k` : `₦${n}`);
+
+/** "Advertise here" board, showing the packages; tapping it opens the booking panel. */
+export function advertiseBoard(packages) {
+  const line = packages.map((p) => `${p.days} days ${shortNaira(p.price)}`).join("  ·  ");
+  const tex = canvasTexture(`ad-advertise-${line}`, 512, 256, (ctx, w, h) => {
+    ctx.fillStyle = "#ffd60a";
+    ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = "#111";
+    for (let i = 0; i < 14; i++) ctx.fillRect(i * 40, 0, 20, 14);
+    for (let i = 0; i < 14; i++) ctx.fillRect(i * 40 + 20, h - 14, 20, 14);
+    ctx.textAlign = "center";
+    ctx.font = "900 54px system-ui, sans-serif";
+    ctx.fillText("ADVERTISE HERE", w / 2, 90);
+    ctx.font = "600 27px system-ui, sans-serif";
+    ctx.fillText("Your business on Nigeria's highways", w / 2, 134);
+    ctx.fillStyle = "#0b6e4f";
+    roundRect(ctx, 22, 154, w - 44, 50, 12);
+    ctx.fill();
+    ctx.fillStyle = "#fff";
+    ctx.font = "bold 24px system-ui, sans-serif";
+    ctx.fillText(line, w / 2, 187);
+    ctx.fillStyle = "#111";
+    ctx.font = "bold 22px system-ui, sans-serif";
+    ctx.fillText("Tap to book  ·  greenrevs.com", w / 2, 230);
+  });
+  return boardWith(tex, { ad: "advertise" });
+}
+
+/** A paid campaign: the advertiser's 2:1 artwork, with a small "Ad" label. */
+export function sponsoredBoard(campaign) {
+  const placeholder = canvasTexture(`ad-loading-${campaign.id}`, 512, 256, (ctx, w, h) => {
+    ctx.fillStyle = "#1d1f24";
+    ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = "#fff";
+    ctx.textAlign = "center";
+    ctx.font = "bold 40px system-ui, sans-serif";
+    ctx.fillText(campaign.advertiser ?? "Sponsored", w / 2, h / 2 + 14);
+  });
+  const g = boardWith(placeholder, { campaign });
+  new THREE.TextureLoader().setCrossOrigin("anonymous").load(campaign.image, (tex) => {
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.anisotropy = 4;
+    g.userData.panel.material.map = tex;
+    g.userData.panel.material.needsUpdate = true;
+  });
+  const label = canvasTexture("ad-label", 64, 32, (ctx, w, h) => {
+    ctx.fillStyle = "#ffd60a";
+    ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = "#111";
+    ctx.font = "bold 22px system-ui, sans-serif";
+    ctx.fillText("Ad", 18, 24);
+  });
+  const tag = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 0.4), new THREE.MeshBasicMaterial({ map: label }));
+  tag.position.set(3.4, 8.45, 0.02);
+  g.add(tag);
+  return g;
+}
+
+/** Roadside buka: long zinc roof on posts, benches, cooking pots and a menu board. */
+export function buka() {
+  return staticMesh("buka", () => {
+    const p = [part(box(12, 0.15, 6), "#9aa0a6", { y: 3.1, rz: 0.05 })];
+    for (const x of [-5.6, 0, 5.6]) for (const z of [-2.8, 2.8]) p.push(part(box(0.18, 3.1, 0.18), "#7f5539", { x, y: 1.55, z }));
+    for (const x of [-3.5, 0, 3.5]) {
+      p.push(part(box(2.6, 0.8, 1.0), "#a47148", { x, y: 0.4, z: -0.8 })); // table
+      p.push(part(box(2.6, 0.45, 0.4), "#8d6e63", { x, y: 0.22, z: 0.1 })); // bench
+    }
+    for (const x of [-4.5, -3.3]) {
+      p.push(part(cyl(0.5, 0.45, 0.6, 10), "#2b2d42", { x, y: 0.6, z: 2 })); // pots
+      p.push(part(box(0.9, 0.3, 0.9), "#6c584c", { x, y: 0.15, z: 2 })); // firewood stand
+    }
+    p.push(part(box(3, 1.4, 0.1), "#1faa59", { x: 3.5, y: 4.1, z: 2.9 })); // menu board
+    return p;
+  });
+}
+
+/** Simple two-storey motel / rest house. */
+export function restHouse() {
+  return staticMesh("resthouse", () => [
+    part(box(14, 6, 7), "#f1faee", { y: 3 }),
+    part(box(14.4, 0.4, 7.4), "#1faa59", { y: 6.2 }),
+    part(box(14.1, 0.25, 7.1), "#e9c46a", { y: 3 }),
+    ...[-5, -2.5, 0, 2.5, 5].flatMap((x) => [
+      part(box(1.2, 1.1, 0.05), "#2b3a42", { x, y: 4.6, z: 3.53 }),
+      part(box(1.2, 1.1, 0.05), "#2b3a42", { x, y: 1.6, z: 3.53 }),
+    ]),
+    part(box(1.6, 2.2, 0.06), "#6f4e37", { y: 1.1, z: 3.54 }),
+  ]);
 }
 
 export function textSign(text, { bg = "#0b6e4f", fg = "#fff", w = 6, h = 1.6, sub = "" } = {}) {

@@ -11,9 +11,22 @@ const defaults = {
   // "auto": post to the host app (WebView/iframe) or open a tab on the open web.
   // "link": show a tappable link card; for sandboxed embeds that block scripted navigation.
   linkMode: "auto",
+  // Roadside advertising sold to businesses. Create one Paystack Payment Page per package
+  // (Paystack dashboard → Payment Pages → fixed amount) and paste its link as paystackUrl.
+  advertise: {
+    contactUrl: "https://greenrevs.com/advertise",   // where advertisers send artwork + payment reference
+    templateUrl: "./ad-template.png",                // 1024×512 billboard template
+    adsUrl: "./ads.json",                            // live campaigns (see README)
+    packages: [
+      { id: "3d", days: 3, price: 15_000, paystackUrl: "" },
+      { id: "7d", days: 7, price: 30_000, paystackUrl: "" },
+      { id: "30d", days: 30, price: 100_000, paystackUrl: "" },
+    ],
+  },
 };
 
-export const CONFIG = { ...defaults, ...(globalThis.GREENREV_CONFIG ?? {}) };
+const override = globalThis.GREENREV_CONFIG ?? {};
+export const CONFIG = { ...defaults, ...override, advertise: { ...defaults.advertise, ...(override.advertise ?? {}) } };
 
 /**
  * Open a GreenRev destination. Inside the mobile app (React Native WebView) or an iframe, the host app
@@ -33,7 +46,7 @@ export function openGreenRev(target, context = {}) {
   const url = `${base}${base.includes("?") ? "&" : "?"}${params}`;
   const message = { type: "greenrev:navigate", target, url, context };
   track("cta_click", { target, ...context });
-  if (CONFIG.linkMode === "link") return showLinkCard(target, url);
+  if (CONFIG.linkMode === "link") return showLinkCard(LINK_LABELS[target] ?? "GreenRev", url);
   const rn = globalThis.ReactNativeWebView;
   if (rn?.postMessage) return rn.postMessage(JSON.stringify(message));
   if (globalThis.parent && globalThis.parent !== globalThis) return globalThis.parent.postMessage(message, "*");
@@ -55,8 +68,19 @@ export function track(event, props = {}) {
 
 const LINK_LABELS = { marketplace: "GreenRev Marketplace", mechanic: "GreenRev Mechanics", dealer: "GreenRev dealer sign-up", parts: "GreenRev Parts" };
 
+/** Open any outside link (advertiser sites, Paystack) the way this embed allows. */
+export function openExternal(url, label = "link") {
+  if (!url) return;
+  if (CONFIG.linkMode === "link") return showLinkCard(label, url);
+  const rn = globalThis.ReactNativeWebView;
+  const message = { type: "greenrev:open", url };
+  if (rn?.postMessage) return rn.postMessage(JSON.stringify(message));
+  if (globalThis.parent && globalThis.parent !== globalThis) return globalThis.parent.postMessage(message, "*");
+  globalThis.open?.(url, "_blank", "noopener");
+}
+
 /** A small card with a real link the player taps to leave the game. */
-function showLinkCard(target, url) {
+function showLinkCard(label, url) {
   document.getElementById("gr-link-card")?.remove();
   const card = document.createElement("div");
   card.id = "gr-link-card";
@@ -65,7 +89,7 @@ function showLinkCard(target, url) {
   a.href = url;
   a.target = "_blank";
   a.rel = "noopener";
-  a.textContent = `Open ${LINK_LABELS[target] ?? "GreenRev"} →`;
+  a.textContent = `Open ${label} →`;
   a.style.cssText = "color:#ffd60a;text-decoration:underline";
   const close = document.createElement("button");
   close.textContent = "✕";

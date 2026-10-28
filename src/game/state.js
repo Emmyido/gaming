@@ -21,7 +21,7 @@ export function newState() {
     completedRoutes: [],
     stamps: [],               // city ids visited
     bestTimes: {},            // routeId -> seconds
-    stats: { km: 0, potholesHit: 0, potholesDodged: 0, checkpoints: 0, crashes: 0, hawkerBuys: 0, legs: 0, ctaClicks: 0 },
+    stats: { km: 0, potholesHit: 0, potholesDodged: 0, checkpoints: 0, crashes: 0, hawkerBuys: 0, legs: 0, ctaClicks: 0, restStops: 0, meals: 0 },
     streak: { count: 0, lastDay: null, claimedDay: null },
     daily: { day: null, missions: [] },
     achievements: [],
@@ -76,6 +76,7 @@ const MISSION_POOL = [
   { id: "legs", text: "Arrive in {n} new towns", stat: "legs", n: [1, 3], reward: 90_000 },
   { id: "nocrash", text: "Finish a leg without crashing", stat: "cleanLegs", n: [1, 1], reward: 100_000 },
   { id: "greenrev", text: "Check out GreenRev Marketplace", stat: "ctaClicks", n: [1, 1], reward: 50_000 },
+  { id: "rest", text: "Take a break at {n} rest stops", stat: "restStops", n: [1, 2], reward: 45_000 },
 ];
 
 /** Three missions per day, the same for everyone on that date. Progress counts from the day's start. */
@@ -219,6 +220,7 @@ const ACHIEVEMENTS = [
   { id: "1000km", name: "1,000 km on Naija roads", test: (s) => s.stats.km >= 1000 },
   { id: "garage", name: "Upgraded your ride", test: (s) => s.owned.length >= 2 },
   { id: "streak7", name: "7-day streak", test: (s) => s.streak.count >= 7 },
+  { id: "food-tour", name: "Naija food tour (10 roadside meals)", test: (s) => (s.stats.meals ?? 0) >= 10 },
 ];
 
 export function checkAchievements(state) {

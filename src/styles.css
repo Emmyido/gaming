@@ -134,3 +134,15 @@ footer { margin-top: 18px; color: var(--muted); font-size: 12px; }
   .pad button { width: 64px; height: 64px; }
   .pad .gas { height: 84px; }
 }
+
+/* advertising booking panel */
+a.btn { display: inline-flex; align-items: center; justify-content: center; text-decoration: none; color: inherit; }
+a.btn.primary { color: #04200f; }
+.pkgs { display: grid; gap: 8px; margin: 12px 0; }
+.pkg { display: grid; grid-template-columns: 1fr auto auto; gap: 10px; align-items: center; background: rgba(255, 255, 255, 0.05); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; }
+.pkg small { display: block; color: var(--muted); font-size: 12px; }
+.pkg .price { font-size: 17px; color: var(--yellow); font-variant-numeric: tabular-nums; }
+.pkg .btn { padding: 8px 12px; font-size: 13px; white-space: nowrap; }
+.steps { margin: 6px 0; padding-left: 20px; display: grid; gap: 6px; line-height: 1.45; }
+.steps a, .card p a:not(.btn) { color: var(--yellow); }
+@media (max-width: 420px) { .pkg { grid-template-columns: 1fr auto; } .pkg .btn { grid-column: 1 / -1; } }

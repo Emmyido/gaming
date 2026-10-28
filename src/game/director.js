@@ -6,6 +6,13 @@ import { rng } from "./rng.js";
  * potholes, checkpoints, go-slow jams (with hawkers), animal crossings, speed traps,
  * filling stations and GreenRev billboards. Positions are metres from the start of the leg.
  */
+const REST_STOP_NAMES = {
+  south: ["Mama Put Rest Stop", "Iya Basira Buka & Fuel", "Travellers' Oasis", "Ogere-style Rest Stop", "Mama Nkechi Kitchen & Fuel"],
+  savanna: ["Mai Suya Junction", "Middle Belt Rest Stop", "Truckers' Rest", "Mama Laraba Kitchen"],
+  sahel: ["Arewa Rest Stop", "Mai Kilishi Junction", "Sahel Truck Stop", "Baba Musa Rest House"],
+  plateau: ["Plateau View Rest Stop", "Hills Kitchen & Fuel", "Cool Breeze Rest House"],
+};
+
 export function planLeg(leg, seed) {
   const r = rng(seed);
   const length = legLengthMeters(leg.km);
@@ -45,6 +52,12 @@ export function planLeg(leg, seed) {
     if (z !== null) addFeature({ type: "bridge", from: z, to: z + 300, depth: 15, name: leg.bridge, style: leg.bridge.includes("Second Niger") ? "cable" : "truss" });
   }
 
+  // Rest stop roughly mid-leg (fuel, food, rest, mechanic); long legs also get a plain filling station
+  const rz = place(length * 0.38, length * 0.62);
+  if (rz !== null) {
+    events.push({ type: "reststop", z: rz, name: r.pick(REST_STOP_NAMES[leg.biome] ?? REST_STOP_NAMES.south) });
+    busy.push([rz - 40, rz + 80]);
+  }
   // Checkpoints by type, from the leg's security profile
   const kinds = [];
   for (const [kind, count] of Object.entries(leg.security)) for (let i = 0; i < count; i++) kinds.push(kind);
@@ -104,12 +117,13 @@ export function planLeg(leg, seed) {
   }
   features.sort((a, b) => a.from - b.from);
 
-  // Filling station roughly mid-leg
-  const fz = place(length * 0.4, length * 0.6);
-  if (fz !== null) events.push({ type: "fuel", z: fz });
+  if (length > 3200) {
+    const fz = place(length * 0.15, length * 0.3) ?? place(length * 0.75, length * 0.88);
+    if (fz !== null) events.push({ type: "fuel", z: fz });
+  }
 
-  // GreenRev billboards (pure scenery + optional tap)
-  const boards = ["mechanic", "marketplace", "dealer", "parts"];
+  // Roadside billboards: GreenRev services, plus "Advertise here" boards that paid campaigns fill
+  const boards = ["mechanic", "marketplace", "dealer", "parts", "advertise", "advertise"];
   for (let z = 250; z < length - 200; z += r.range(500, 800)) events.push({ type: "billboard", z, ad: r.pick(boards), side: r.pick([-1, 1]) });
 
   // Potholes: density from road quality, clustered in "bad patches"

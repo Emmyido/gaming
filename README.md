@@ -46,6 +46,13 @@ Adding a city is one entry in `src/data/routes.js`.
   - **Named Niger crossings:** the steel-truss **Jebba Bridge** and the cable-stayed **Second Niger Bridge**, with the river below, piers, and fishermen in canoes. The South also gets smaller creek bridges (narrow, no overtaking).
   - **City flyovers:** the road climbs over a busy junction, with traffic crossing underneath and traders under the deck. Highway **overpasses** cross above you, with their own traffic.
   - **Roundabouts:** the carriageway swings around an island with palms and a monument in green-white-green, a traffic warden directing traffic, and cars queueing on the side roads. Above 60 km/h the warden (LASTMA in Lagos) fines you.
+- **Rest stops:** one on almost every leg, signposted 500 m ahead. Stop beside it and pull in:
+  - **Fuel** at the forecourt.
+  - **Regional food** that restores driver energy: jollof and amala in the South, pounded yam and suya in the middle belt, tuwo, kilishi and fura da nono in the North, Irish potato porridge on the Plateau.
+  - **Rest** for an hour to get back to full energy.
+  - **Quick mechanic check:** +15% condition.
+  - **Missing FRSC safety kit:** buy it there.
+  - Each stop has a buka, a rest house, parked trailers and travellers eating. Long legs also get a plain filling station.
 - **Potholes:** shallow ones jolt you, deep ones can burst a tyre. Tougher cars and suspension upgrades take less damage, and rain makes them harder to see.
 - **Go-slow:** a city jam at the start and end of busy legs, plus random mid-route jams (a broken-down trailer, market day, road works). **Hawkers** walk between the cars; buy a snack to restore your energy.
 - **Checkpoints:** slow down when you see the drums, stop, and answer the officer:
@@ -84,6 +91,51 @@ The game routes players to GreenRev at natural moments, not with pop-up ads:
 
 One daily mission rewards visiting the Marketplace. Every click is tagged with a UTM reason (`breakdown`, `vio_fail`, `garage_real_car` …) so you can measure which moments convert.
 
+## Roadside advertising (revenue)
+
+Businesses can buy space on the in-game billboards. Some roadside boards, and a signpost at every rest stop, read **ADVERTISE HERE** with the prices. Tapping one (or **📣 Advertise** in the menu) opens the booking panel:
+
+| Package | Price (default) |
+|---|---|
+| 3 days | ₦15,000 |
+| 7 days | ₦30,000 |
+| 30 days | ₦100,000 |
+
+**Set up payments**
+1. In the Paystack dashboard, open **Payment Pages**, create one fixed-amount page per package, and copy each page's link.
+2. Paste the links (and your prices) into `advertise.packages` in `src/config.js`, or pass them in from the app:
+   ```js
+   window.GREENREV_CONFIG = { advertise: {
+     contactUrl: "https://greenrevs.com/advertise",   // or https://wa.me/234XXXXXXXXXX
+     packages: [
+       { id: "3d", days: 3, price: 15000, paystackUrl: "https://paystack.com/pay/your-3-day-page" },
+       { id: "7d", days: 7, price: 30000, paystackUrl: "https://paystack.com/pay/your-7-day-page" },
+       { id: "30d", days: 30, price: 100000, paystackUrl: "https://paystack.com/pay/your-30-day-page" },
+     ] } };
+   ```
+   Until a package has a Paystack link, its button reads **Book now** and goes to `contactUrl`.
+
+**Artwork**
+- Size: 1024 × 512 px (2:1), JPG or PNG under 500 KB, with text kept 40 px from the edges.
+- Template: `public/ad-template.png`, linked from the panel. Regenerate it with `node scripts/make-ad-template.mjs`.
+
+**Going live:** add the campaign to `public/ads.json`, or serve the same shape from the GreenRev backend and point `advertise.adsUrl` at it:
+```json
+{ "campaigns": [
+  { "id": "mama-cass-nov", "advertiser": "Mama Cass Kitchen", "image": "https://cdn.greenrevs.com/ads/mama-cass.jpg",
+    "link": "https://wa.me/2348000000000", "start": "2026-11-01", "end": "2026-11-07", "routes": ["lagos-abuja"] } ] }
+```
+- `routes` is optional; leave it out for every journey.
+- Images must be served with CORS enabled (any normal CDN is fine).
+- Active campaigns rotate across the ADVERTISE HERE slots, with a small **Ad** tag.
+- Tapping an ad opens the advertiser's link.
+
+**Reporting:** the game emits these events, so you can send advertisers impressions and taps from your analytics:
+- `ad_impression {campaign}`
+- `ad_click {campaign}`
+- `advertise_open`
+- `advertise_package_click {package}`
+
 ## Run it
 
 ```bash
@@ -94,6 +146,7 @@ npm run build          # static site in dist/
 npm run smoke          # headless browser: boots the game, drives, checks the go-slow, hawker and checkpoint flows; fails on console errors
 node scripts/tour.mjs  # screenshots of every region into screenshots/
 node scripts/features-tour.mjs  # screenshots of each bridge, flyover, overpass and roundabout type
+node scripts/stops-tour.mjs  # rest stop, Advertise Here boards, a sponsored board and the booking panel
 ```
 
 Controls: **↑/W** gas · **↓/S/Space** brake · **←→/A D** steer · **H** horn · **C** camera · **B** buy from a hawker · **F** refuel · **P/Esc** pause. On phones, on-screen buttons appear.
@@ -151,6 +204,8 @@ src/
   data/routes.js     cities, journeys, legs (road quality, traffic, security, biome)
   data/cars.js       garage cars, upgrades, safety kit, driving physics
   game/state.js      save game, streaks, daily missions, economy, achievements (pure, tested)
+  game/ads.js        roadside ad campaigns: load ads.json, pick active ones (tested)
+  data/food.js       regional rest-stop menus
   game/director.js   seeded per-leg event plan: potholes, checkpoints, go-slows, animals, billboards (pure, tested)
   game/physics.js    lanes, curves, hills, road features (flyover lift, river valleys, roundabout widening), collisions
   game/ui.js         menu, modals, garage, passport, HUD helpers

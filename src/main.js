@@ -1,10 +1,12 @@
 import * as THREE from "three";
 import { CITIES, getRoute } from "./data/routes.js";
 import { carPhysics, getCar, SAFETY_KIT } from "./data/cars.js";
-import { openGreenRev, track } from "./config.js";
+import { CONFIG, openExternal, openGreenRev, track } from "./config.js";
 import { Audio } from "./game/audio.js";
 import { Input } from "./game/input.js";
 import { planLeg } from "./game/director.js";
+import { activeCampaigns, loadCampaigns } from "./game/ads.js";
+import { GREETINGS, MENUS } from "./data/food.js";
 import { BIOME_HILLS, crashDamage, curveHeading, hillY, laneX, lateralX, MEDIAN_HALF, overlaps, ROAD_EDGE, setHillProfile, setRoadFeatures, SHOULDER } from "./game/physics.js";
 import { rng } from "./game/rng.js";
 import * as S from "./game/state.js";
@@ -31,6 +33,9 @@ class Game {
     this.t = 0;
     this.shake = 0;
     this.cameraMode = this.state.settings.camera ?? "chase";
+    this.campaigns = [];
+    this.adRotation = 0;
+    loadCampaigns(CONFIG.advertise.adsUrl).then((c) => (this.campaigns = c));
     this.initRenderer();
     this.input.bindTouch($("touch"));
     UI.setCtaHandler((target, context) => this.cta(target, context));
@@ -86,6 +91,7 @@ class Game {
   }
 
   cta(target, context) {
+    if (target === "advertise") return this.openAdvertise(context?.reason ?? "cta");
     S.addStat(this.state, "ctaClicks");
     this.checkProgress();
     S.save(this.state);
@@ -95,6 +101,7 @@ class Game {
   async openPanel(name) {
     if (name === "garage") await UI.openGarage(this.state);
     if (name === "passport") await UI.openPassport(this.state);
+    if (name === "advertise") await this.openAdvertise("menu");
     if (name === "settings") await UI.openSettings(this.state, this.audio, () => UI.toast("Graphics change applies after reload"));
     this.showMenu();
   }
@@ -601,6 +608,13 @@ class Game {
         case "feature":
           this.updateFeatureEvent(e);
           break;
+        case "reststop":
+          if (!e.state.warned && d < 520) {
+            e.state.warned = true;
+            UI.alertBanner(`🛑 ${e.name} in 500 m · Fuel · Food · Rest`, "info");
+          }
+          if (Math.abs(d - 15) < 45 && p.speed < 4) action = { text: `Pull into ${e.name}  (R)`, run: () => this.restStopDialog(e) };
+          break;
         case "breakdown-scene":
           if (!e.state.told && d < 60) {
             e.state.told = true;
@@ -614,7 +628,7 @@ class Game {
     this.active = this.active.filter((e) => e.wz > p.z - 200 || (e.type === "goslow" && e.wz + e.length > p.z - 50) || (e.type === "feature" && e.feature.to > p.z - 50));
     if (action) {
       UI.actionButton(action.text, action.run);
-      if (this.input.took("KeyB", "KeyF")) action.run();
+      if (this.input.took("KeyB", "KeyF", "KeyR")) action.run();
     } else UI.actionButton(null);
   }
 
@@ -717,9 +731,36 @@ class Game {
       case "fuel":
         put(M.fillingStation(), e.wz, ROAD_EDGE + 10, -Math.PI / 2);
         break;
-      case "billboard":
-        put(M.billboard(e.ad), e.wz, e.side * (ROAD_EDGE + 9), e.side > 0 ? -Math.PI / 2 - 0.4 : Math.PI / 2 + 0.4);
+      case "billboard": {
+        let board;
+        if (e.ad === "advertise") {
+          const live = activeCampaigns(this.campaigns, S.dayKey(), this.route.id);
+          if (live.length) {
+            const c = live[this.adRotation++ % live.length];
+            board = M.sponsoredBoard(c);
+            track("ad_impression", { campaign: c.id, routeId: this.route.id, leg: this.legIndex });
+          } else board = M.advertiseBoard(CONFIG.advertise.packages);
+        } else board = M.billboard(e.ad);
+        put(board, e.wz, e.side * (ROAD_EDGE + 9), M.boardFacing(e.side));
         break;
+      }
+      case "reststop": {
+        // forecourt, buka, rest house and parked trailers on the right, set back from the road
+        put(M.fillingStation(), e.wz, ROAD_EDGE + 10, -Math.PI / 2);
+        put(M.buka(), e.wz + 32, ROAD_EDGE + 13, -Math.PI / 2);
+        put(M.restHouse(), e.wz + 58, ROAD_EDGE + 21, -Math.PI / 2);
+        put(M.vehicleMesh("truck", "#1d4e89"), e.wz - 26, ROAD_EDGE + 17, 0.15);
+        put(M.vehicleMesh("tanker", "#f1faee"), e.wz - 40, ROAD_EDGE + 21, 0.1);
+        put(M.vehicleMesh("bus", "#f3f5f4"), e.wz + 78, ROAD_EDGE + 14, 0);
+        put(M.textSign(`${e.name.toUpperCase()} 500m`, { bg: "#0b6e4f", sub: "⛽ Fuel  ·  🍲 Food  ·  🛏 Rest  ·  🔧 Mechanic" }), e.wz - 500, ROAD_EDGE + 3);
+        put(M.textSign("REST STOP", { bg: "#0b6e4f", w: 4, h: 1.2, sub: "Turn in here" }), e.wz - 40, ROAD_EDGE + 3);
+        const ad = put(M.textSign("ADVERTISE HERE", { bg: "#ffd60a", fg: "#111", sub: "Roadside ads from 3 days · Tap to book" }), e.wz + 95, ROAD_EDGE + 3.5);
+        ad.userData.ad = "advertise";
+        for (const [dz, dx, kind] of [[28, 11.5, "civilian"], [33, 12.2, "civilian"], [36, 11.6, "hawker"], [-4, 11, "civilian"]]) {
+          this.actors.add(kind, e.wz + dz, ROAD_EDGE + dx, { role: "scene", face: -Math.PI / 2 });
+        }
+        break;
+      }
       case "breakdown-scene": {
         const broken = put(M.vehicleMesh("sedan", "#6c757d"), e.wz, ROAD_EDGE + 1.3);
         broken.rotation.z = 0.06;
@@ -961,6 +1002,95 @@ class Game {
     this.checkProgress();
   }
 
+  /** Pull in at a rest stop: fuel, a regional meal, a nap, a quick mechanic check, safety kit. */
+  async restStopDialog(e) {
+    const s = this.state;
+    this.player.speed = 0;
+    if (!e.state.visited) {
+      e.state.visited = true;
+      S.addStat(s, "restStops");
+      this.checkProgress();
+    }
+    const menu = MENUS[this.leg.biome] ?? MENUS.south;
+    const greet = GREETINGS[Math.floor(Math.random() * GREETINGS.length)];
+    for (;;) {
+      const prices = S.servicePrices(s);
+      const check = Math.round(prices.repair * 0.25);
+      const missingKit = Object.entries(SAFETY_KIT).filter(([k]) => !s.kit[k]);
+      const id = await this.dialog({
+        art: "🛑",
+        title: e.name,
+        body: `<p class="quote">${greet}</p><p>Fuel <b>${Math.round(s.fuel)}%</b> · Car <b>${Math.round(s.condition)}%</b> · Energy <b>${Math.round(s.energy ?? 100)}%</b> · Wallet <b>${naira(s.coins)}</b></p>
+          ${UI.ctaBlock("Want your business on this rest stop's billboard? Drivers on this road see it every day.", "Advertise at rest stops")}`,
+        cta: { target: "advertise", context: { reason: "rest_stop" } },
+        actions: [
+          { id: "fuel", label: "⛽ Fill the tank", hint: naira(prices.refuel), disabled: s.fuel > 97 },
+          ...menu.map((m, i) => ({ id: `food-${i}`, label: `🍲 ${m.name}`, hint: `${naira(m.price)} · +${m.energy} energy` })),
+          { id: "rest", label: "🛏 Rest for an hour", hint: `${naira(1_000)} · energy to 100%`, disabled: (s.energy ?? 100) > 95 },
+          { id: "check", label: "🔧 Quick mechanic check", hint: `${naira(check)} · +15% condition`, disabled: s.condition > 92 },
+          ...(missingKit.length ? [{ id: "kit", label: `🧯 Buy ${missingKit[0][1].name}`, hint: naira(missingKit[0][1].price) }] : []),
+          { id: "go", label: "Back on the road →", style: "primary" },
+        ],
+      });
+      if (id === "go") return S.save(s);
+      if (id === "fuel") S.refuel(s) || UI.toast("Not enough money for fuel", { kind: "bad" });
+      else if (id.startsWith("food-")) {
+        const m = menu[Number(id.slice(5))];
+        if (S.spend(s, m.price)) {
+          s.energy = Math.min(100, (s.energy ?? 100) + m.energy);
+          this.energyWarned = false;
+          S.addStat(s, "meals");
+          this.audio.coin();
+          UI.toast(`${m.name}. Correct food! Energy +${m.energy}`, { kind: "gold" });
+          this.checkProgress();
+        } else UI.toast("You no get money for food", { kind: "bad" });
+      } else if (id === "rest") {
+        if (S.spend(s, 1_000)) {
+          s.energy = 100;
+          this.energyWarned = false;
+          this.timeOfDay = ((this.timeOfDay ?? 8) + 1) % 24;
+          UI.toast("You slept small. Fresh again! 😴");
+        }
+      } else if (id === "check") {
+        if (S.spend(s, check)) {
+          s.condition = Math.min(100, s.condition + 15);
+          UI.toast("The mechanic tightened a few things. +15% condition");
+        }
+      } else if (id === "kit") {
+        const r = S.buyKit(s, missingKit[0][0]);
+        if (!r.ok) UI.toast(r.reason, { kind: "bad" });
+      }
+      S.save(s);
+    }
+  }
+
+  /** Booking panel for businesses that want a roadside billboard. Real links, so it works in any embed. */
+  async openAdvertise(source) {
+    const A = CONFIG.advertise;
+    track("advertise_open", { source });
+    const esc = (u) => String(u).replace(/"/g, "&quot;");
+    const rows = A.packages.map((p) => {
+      const href = p.paystackUrl || A.contactUrl;
+      const label = p.paystackUrl ? "Pay with Paystack" : "Book now";
+      return `<div class="pkg"><div><b>${p.days} days</b><small>${naira(Math.round(p.price / p.days))}/day</small></div><b class="price">${naira(p.price)}</b>
+        <a class="btn primary" data-pkg="${p.id}" href="${esc(href)}" target="_blank" rel="noopener">${label}</a></div>`;
+    }).join("");
+    const p = this.dialog({
+      art: "📣",
+      title: "Advertise on Nigeria's highways",
+      body: `<p>Put your business on the roadside billboards in GreenRev Roadtrip: on the Lagos–Abuja, Lagos–Calabar, Abuja–Kano, Jos and Maiduguri roads, in the web and mobile app.</p>
+        <div class="pkgs">${rows}</div>
+        <h2>How it works</h2>
+        <ol class="steps"><li>Pick a package and pay securely with Paystack.</li><li>Send your billboard image and payment reference to <a href="${esc(A.contactUrl)}" target="_blank" rel="noopener">GreenRev advertising</a>. Add a link (website, WhatsApp or GreenRev store) for drivers who tap your ad.</li><li>Your ad goes live within 24 hours, and we send you how many drivers saw and tapped it.</li></ol>
+        <h2>Billboard image</h2>
+        <p><b>1024 × 512 px</b> (2:1 landscape), JPG or PNG, under 500 KB. Drivers see it for about 3 seconds: one big message, your logo, and a phone number or web address. Keep text 40 px from the edges.</p>
+        <p><a class="btn" href="${esc(A.templateUrl)}" target="_blank" rel="noopener">Download the billboard template</a></p>`,
+      actions: [{ id: "close", label: "Back to the road", style: "ghost" }],
+    });
+    document.querySelectorAll("#modal-body [data-pkg]").forEach((a) => a.addEventListener("click", () => track("advertise_package_click", { package: a.dataset.pkg, source })));
+    await p;
+  }
+
   roadsideRefuel() {
     const cost = S.servicePrices(this.state).refuel;
     if (S.refuel(this.state)) {
@@ -1171,7 +1301,13 @@ class Game {
     const hits = this.raycaster.intersectObjects(this.world.dynamic.children, true);
     for (const h of hits) {
       let o = h.object;
-      while (o && !o.userData?.ad) o = o.parent;
+      while (o && !o.userData?.ad && !o.userData?.campaign) o = o.parent;
+      if (o?.userData.campaign) {
+        const c = o.userData.campaign;
+        track("ad_click", { campaign: c.id, routeId: this.route.id });
+        return openExternal(c.link, c.advertiser ?? "advertiser");
+      }
+      if (o?.userData.ad === "advertise") return this.openAdvertise("billboard_tap");
       if (o?.userData.ad) return this.cta(o.userData.ad, { reason: "billboard_tap" });
     }
   }

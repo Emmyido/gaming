@@ -26,6 +26,7 @@ export function modal({ art = "", title, body = "", actions = [], cta = null }) 
   const box = $("modal-actions");
   box.innerHTML = "";
   $("modal").classList.remove("hidden");
+  $("modal").querySelector(".card").scrollTop = 0;
   return new Promise((resolve) => {
     for (const a of actions) {
       const b = document.createElement("button");
